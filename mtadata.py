@@ -336,8 +336,8 @@ for station in plot_stations:
     timediffplotter(tplot, data.exitSpline, 'Exits')
     pyplot.show()
 
-    inverseEntry[station] = spline(data.entrySpline(ts_val)/data.total_entries, ts_val)
-    inverseExit[station] = spline(data.exitSpline(ts_val)/data.total_exits, ts_val)
+    inverseEntry[station] = spline(data.entrySpline(ts_val)/data.total_entries, ts_val-ts_val[0])
+    inverseExit[station] = spline(data.exitSpline(ts_val)/data.total_exits, ts_val-ts_val[0])
 
     ##pyplot(ts_val, data.entrySpline(ts_val)/data.total_entries) # useful for station density inverse
 
