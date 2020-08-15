@@ -8,7 +8,6 @@ from matplotlib.dates import date2num, num2date
 import dateutil.relativedelta as REL
 from scipy.interpolate import PchipInterpolator as pchip
 from scipy.interpolate import interp1d
-from numpy import interp
 
 linear = True
 
