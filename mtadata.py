@@ -7,6 +7,23 @@ from matplotlib import pyplot, dates
 from matplotlib.dates import date2num, num2date
 import dateutil.relativedelta as REL
 from scipy.interpolate import PchipInterpolator as pchip
+from scipy.interpolate import interp1d
+from numpy import interp
+
+linear = True
+
+def spline(x, y):
+    if linear:
+        return interp1d(x, y, bounds_error=False, fill_value=(0,max(y)))
+    return pchip(x, y)
+
+def plotter(x, y):
+    if linear:
+        df = numpy.diff(y(x))/numpy.diff(x)/24 # derivative is in date2num, which is per day
+        print(df)
+        pyplot.plot_date(x[1:], df, fmt='b-')
+    else:
+        pyplot.plot_date(x, y.derivative()(x)/24, fmt='b-') # derivative is in date2num, which is per day
 
 def overlap(List1 , List2):
     overlap = []
@@ -81,7 +98,6 @@ def generate_CA_splines(record):
         SCPexitSpline = {}
         timestamps = {}
         for SCP, rSCP in rCA.turnstiles.items():
-            time_from_last = {}
             cum_entries = {}
             cum_exits = {}
             firstIter = True # too complicated not to use a boolean
@@ -93,7 +109,7 @@ def generate_CA_splines(record):
                     firstIter = False
                     ts_prev = ts
                     timestamps[ts] = True
-                    time_from_last = timedelta(days=25000)
+                    timediff = timedelta(days=25000)
                     cum_entries[ts] = 0
                     cum_exits[ts] = 0
                     entries_prev = entries
@@ -105,14 +121,14 @@ def generate_CA_splines(record):
                         rSCP.db_exits[ts] = rSCP.db_exits[ts_prev]
                         cum_entries[ts] = 0
                         cum_exits[ts] = 0
-                        time_from_last = timedelta(seconds=1)
+                        timediff = timedelta(seconds=1)
                         break
                     continue
                 timediff = ts-ts_prev
                 if timediff < timedelta(hours=1): # dirty data
-                    if time_from_last_prev < timedelta(hours=4):
+                    if timediff_prev < timedelta(hours=4):
                         timestamps.pop(ts_prev) # add on to previous
-                        timediff += time_from_last_prev
+                        timediff += timediff_prev
                         pop_prev = True
                     else: # add on to next
                         continue
@@ -120,30 +136,35 @@ def generate_CA_splines(record):
                     diff_entries = 0
                     diff_exits = 0
                 timestamps[ts] = True
-                time_from_last = timediff
                 diff_entries += min(abs(entries - entries_prev), entries)
-                cum_entries[ts] = cum_entries[ts_prev]+diff_entries
                 diff_exits += min(abs(exits - exits_prev), exits)
-                cum_exits[ts] = cum_exits[ts_prev]+diff_exits
-                if diff_entries > 50000:
+                if diff_entries > 10000:
                     print(rCA.name + ' ' + CA + ' ' + SCP + ' ' + ts.strftime('%m/%d/%Y %H:%M:%S') + ' entries ' + str(diff_entries))
-                if diff_exits > 50000:
+                    diff_entries = timediff*diff_entries_prev/timediff_prev
+                    print(rCA.name + ' ' + CA + ' ' + SCP + ' ' + ts_prev.strftime('%m/%d/%Y %H:%M:%S') + ' entries ' + str(diff_entries_prev))
+                if diff_exits > 10000:
                     print(rCA.name + ' ' + CA + ' ' + SCP + ' ' + ts.strftime('%m/%d/%Y %H:%M:%S') + ' exits ' + str(diff_exits))
+                    diff_exits = timediff*diff_exits_prev/timediff_prev
+                    print(rCA.name + ' ' + CA + ' ' + SCP + ' ' + ts_prev.strftime('%m/%d/%Y %H:%M:%S') + ' exits ' + str(diff_exits_prev))
+                cum_entries[ts] = cum_entries[ts_prev]+diff_entries
+                cum_exits[ts] = cum_exits[ts_prev]+diff_exits
                 if pop_prev:
                     cum_entries.pop(ts_prev)
                     cum_exits.pop(ts_prev)
                 ts_prev = ts
+                diff_entries_prev = diff_entries
                 entries_prev = entries
+                diff_exits_prev = diff_exits
                 exits_prev = exits
-                time_from_last_prev = time_from_last
+                timediff_prev = timediff
 ##            if rCA.name == 'TIMES SQ-42 ST' or rCA.name == '42ST-PORT AUTH':
 ##                print(SCP + ' ' + CA)
 ##                for entry in 
 ##                print(cum_exits)
 ##                print()
             times = date2num([*cum_entries.keys()])
-            SCPentrySpline[SCP] = pchip(times, [*cum_entries.values()])
-            SCPexitSpline[SCP] = pchip(times, [*cum_exits.values()])
+            SCPentrySpline[SCP] = spline(times, [*cum_entries.values()])
+            SCPexitSpline[SCP] = spline(times, [*cum_exits.values()])
             del rSCP.db_entries, rSCP.db_exits # clear RAM as we go
         for ts in sorted(timestamps.keys()):
             rCA.entries[ts] = 0
@@ -158,8 +179,8 @@ def generate_CA_splines(record):
                 rCA.exits[ts] += exAdd
         del rCA.turnstiles # clear RAM as we go
         times = date2num([*rCA.entries.keys()])
-        rCA.entrySpline = pchip(times,[*rCA.entries.values()])
-        rCA.exitSpline = pchip(times,[*rCA.exits.values()])
+        rCA.entrySpline = spline(times,[*rCA.entries.values()])
+        rCA.exitSpline = spline(times,[*rCA.exits.values()])
         del rCA.exits # we still need rCA.entries' keys one more time
 
 def findStations(record, junctionDict = {}, junctionNames = {}):
@@ -201,8 +222,8 @@ def findStations(record, junctionDict = {}, junctionNames = {}):
                 rStation.entries[ts] += entAdd
                 rStation.exits[ts] += exAdd
         times = date2num([*rStation.entries.keys()])
-        rStation.entrySpline = pchip(times,[*rStation.entries.values()])
-        rStation.exitSpline = pchip(times,[*rStation.exits.values()])
+        rStation.entrySpline = spline(times,[*rStation.entries.values()])
+        rStation.exitSpline = spline(times,[*rStation.exits.values()])
     return stations
             
 def countStations(stations, boolPrint=False):
@@ -247,7 +268,7 @@ for j in junctionArray:
 
 ########## Main Code
 matplotlib.rcParams['timezone'] = 'US/Eastern'
-start_date = datetime(2019,1,26)
+start_date = datetime(2019,2,16)
 rd = REL.relativedelta(days=1, weekday=REL.SA) # get next Saturday
 start_date += rd
 end_date = datetime(2019,2,22)
@@ -261,6 +282,7 @@ while start_date <= end_date:
 files = []
 for s in datestr_list:
     files += ['turnstile_'+s+'.txt']
+files = ['turnstile_190223 - Copy.txt']
 print(files)
 record = read_files(files)
 generate_CA_splines(record)
@@ -276,7 +298,8 @@ stations = findStations(record, junctionDict, junctionNames)
 ##numLines = countStations(stations)
 ##print('there are ' + str(numLines) + ' stations\n')
 
-plot_stations = [('14 ST-UNION SQ','456LNQRW'), ('34 ST-PENN STA', '123ACE'), ('TIMES SQ-42 ST', '1237ACENQRSW')]
+##plot_stations = [('14 ST-UNION SQ','456LNQRW'), ('34 ST-PENN STA', '123ACE'), ('TIMES SQ-42 ST', '1237ACENQRSW')]
+plot_stations = [('34 ST-PENN STA', '123ACE')]
 for station in plot_stations:
     data = stations[station]
     ts_obj = [*data.entries.keys()]
@@ -285,7 +308,7 @@ for station in plot_stations:
 
     fig = pyplot.figure()
     ax = pyplot.gca()
-    pyplot.plot_date(tplot, data.entrySpline.derivative()(tplot)/24, fmt='b-') # derivative is in date2num, which is per day
+    plotter(tplot, data.entrySpline)
     #pyplot.plot_date(ts_val, [*data.entries.values()])
     fig.suptitle(data.title + ' Entries ' + ts_obj[0].strftime('%m/%d/%Y') + ' to ' + ts_obj[-1].strftime('%m/%d/%Y'))
     pyplot.ylabel('Entries per hour')
@@ -298,7 +321,7 @@ for station in plot_stations:
 
     fig = pyplot.figure()
     ax = pyplot.gca()
-    pyplot.plot_date(tplot, data.exitSpline.derivative()(tplot)/24, fmt='b-') # derivative is in date2num, which is per day
+    plotter(tplot, data.exitSpline)
     fig.suptitle(data.title + ' Exits ' + ts_obj[0].strftime('%m/%d/%Y') + ' to ' + ts_obj[-1].strftime('%m/%d/%Y'))
     pyplot.ylabel('Exits per hour')
     xfmt = dates.DateFormatter('%Y-%m-%d %H:%M:%S')
