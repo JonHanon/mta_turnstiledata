@@ -16,13 +16,22 @@ def spline(x, y):
         return interp1d(x, y, bounds_error=False, fill_value=(0,max(y)))
     return pchip(x, y)
 
-def plotter(x, y):
+def timediffplotter(x, y, entry_exit_str):
+    fig = pyplot.figure()
+    ax = pyplot.gca() 
     if linear:
         df = numpy.diff(y(x))/numpy.diff(x)/24 # derivative is in date2num, which is per day
-        print(df)
         pyplot.plot_date(x[1:], df, fmt='b-')
     else:
         pyplot.plot_date(x, y.derivative()(x)/24, fmt='b-') # derivative is in date2num, which is per day
+    fig.suptitle(data.title + ' ' + entry_exit_str + ' ' + ts_obj[0].strftime('%m/%d/%Y') + \
+                                                 ' to ' + ts_obj[-1].strftime('%m/%d/%Y'))
+    pyplot.ylabel(entry_exit_str+' per hour')
+    xfmt = dates.DateFormatter('%Y-%m-%d %H:%M:%S')
+    ax.xaxis.set_major_formatter(xfmt)
+    ##pyplot.xticks(ticks)
+    fig.autofmt_xdate()
+    fig.set_size_inches(16, 8)
 
 def overlap(List1 , List2):
     overlap = []
@@ -220,6 +229,8 @@ def findStations(record, junctionDict = {}, junctionNames = {}):
                     continue
                 rStation.entries[ts] += entAdd
                 rStation.exits[ts] += exAdd
+                rStation.total_entries = rStation.entries[ts]
+                rStation.total_exits = rStation.exits[ts]
         times = date2num([*rStation.entries.keys()])
         rStation.entrySpline = spline(times,[*rStation.entries.values()])
         rStation.exitSpline = spline(times,[*rStation.exits.values()])
@@ -298,34 +309,42 @@ stations = findStations(record, junctionDict, junctionNames)
 ##print('there are ' + str(numLines) + ' stations\n')
 
 ##plot_stations = [('14 ST-UNION SQ','456LNQRW'), ('34 ST-PENN STA', '123ACE'), ('TIMES SQ-42 ST', '1237ACENQRSW')]
+
+total_entries = 0
+total_exits = 0
+for station in stations.values():
+    total_entries += station.total_entries
+    total_exits += station.total_exits
+prop_entries = {}
+prop_exits = {}
+for station in stations.values():
+    prop_entries[station.name] = station.total_entries / total_entries
+    prop_exits[station.name] = station.total_exits / total_exits
+
 plot_stations = [('34 ST-PENN STA', '123ACE')]
+inverseEntry = {}
+inverseExit = {}
 for station in plot_stations:
     data = stations[station]
     ts_obj = [*data.entries.keys()]
     ts_val = date2num(ts_obj)
     tplot = numpy.linspace(ts_val[0],ts_val[-1], 10000)
-
-    fig = pyplot.figure()
-    ax = pyplot.gca()
-    plotter(tplot, data.entrySpline)
-    #pyplot.plot_date(ts_val, [*data.entries.values()])
-    fig.suptitle(data.title + ' Entries ' + ts_obj[0].strftime('%m/%d/%Y') + ' to ' + ts_obj[-1].strftime('%m/%d/%Y'))
-    pyplot.ylabel('Entries per hour')
-    xfmt = dates.DateFormatter('%Y-%m-%d %H:%M:%S')
-    ax.xaxis.set_major_formatter(xfmt)
-    ##pyplot.xticks(ticks)
-    fig.autofmt_xdate()
-    fig.set_size_inches(16, 8)
+    timediffplotter(tplot, data.entrySpline, 'Entries')
+##    #pyplot.plot_date(ts_val, [*data.entries.values()])
     pyplot.show()
 
+    timediffplotter(tplot, data.exitSpline, 'Exits')
+    pyplot.show()
+
+    inverseEntry[station] = spline(data.entrySpline(ts_val)/data.total_entries, ts_val)
+    inverseExit[station] = spline(data.exitSpline(ts_val)/data.total_exits, ts_val)
+
+    ##pyplot(ts_val, data.entrySpline(ts_val)/data.total_entries) # useful for station density inverse
+
+dplot = numpy.linspace(0,1,10000)
+for station, stationDensity in inverseExit.items():
     fig = pyplot.figure()
-    ax = pyplot.gca()
-    plotter(tplot, data.exitSpline)
-    fig.suptitle(data.title + ' Exits ' + ts_obj[0].strftime('%m/%d/%Y') + ' to ' + ts_obj[-1].strftime('%m/%d/%Y'))
-    pyplot.ylabel('Exits per hour')
-    xfmt = dates.DateFormatter('%Y-%m-%d %H:%M:%S')
-    ax.xaxis.set_major_formatter(xfmt)
-    ##pyplot.xticks(ticks)
-    fig.autofmt_xdate()
-    fig.set_size_inches(16, 8)
+    ax = pyplot.gca() 
+    pyplot.plot(dplot, stationDensity(dplot))
+    fig.suptitle(station)
     pyplot.show()
