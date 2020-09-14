@@ -463,8 +463,8 @@ for station in plot_stations:
     weeklyplotter(x, y, data.title, 'Weekday Average Exits')
     pyplot.show()
 
-    inverseEntry[station] = spline(data.entrySpline(ts_val)/data.total_entries, ts_val-ts_val[0])
-    inverseExit[station] = spline(data.exitSpline(ts_val)/data.total_exits, ts_val-ts_val[0])
+    inverseEntry[station] = spline(data.entrySpline(ts_val)/data.total_entries, ts_val-ts_val[0]) # may be useless
+    inverseExit[station] = spline(data.exitSpline(ts_val)/data.total_exits, ts_val-ts_val[0])  # ts_val[0] may not be correct
     inverseEntryWeekly[station] = spline(entryWeekly[station](weekly_ts_val)/data.total_entries, weekly_ts_val)
     inverseExitWeekly[station] = spline(exitWeekly[station](weekly_ts_val)/data.total_exits, weekly_ts_val)
     inverseEntryWeekday[station] = spline(entryWeekday[station](weekday_ts_val)/weekday_total_entries, weekday_ts_val)
