@@ -331,7 +331,7 @@ numWeeks = len(datestr_list)
 files = []
 for s in datestr_list:
     files += ['turnstile_'+s+'.txt']
-#files = ['turnstile_190223 - Copy.txt']
+files = ['turnstile_190223 - Copy.txt']
 print(files)
 record = read_files(files)
 generate_CA_splines(record)
@@ -365,19 +365,20 @@ inverseEntry = {}
 inverseExit = {}
 entryWeekly = {}
 exitWeekly = {}
+entryWeekday = {}
+exitWeekday = {}
 inverseEntryWeekly = {}
 inverseExitWeekly = {}
+inverseEntryWeekday = {}
+inverseExitWeekday = {}
 
 weekly_entries = {}
 weekly_exits = {}
-weekly_entries_diff = {}
-weekly_exits_diff = {}
-    
+weekday_entries = {}
+weekday_exits = {}
+
 numBins = 10000
 
-
-
-weekly_ts_val = {}
 for station in plot_stations:
     data = stations[station]
     ts_obj = [*data.entries.keys()]
@@ -385,31 +386,55 @@ for station in plot_stations:
     tplot = numpy.linspace(ts_val[0],ts_val[-1], numBins*numWeeks)
     
     weekly_ts_dict = {}
+    weekday_ts_dict = {}
     for val in ts_val:
         weekly_ts_dict[(val-2)%7] = True
+        if val >= 2:
+            weekday_ts_dict[val%1] = True
 
+    weekly_ts_dict[0] = True
+    weekday_ts_dict[0] = True
+    weekly_ts_dict[7] = True
+    weekday_ts_dict[1] = True
+    
     weekly_ts_val = sorted([ts for ts in sorted(weekly_ts_dict.keys())])
+    weekday_ts_val = sorted([ts for ts in sorted(weekday_ts_dict.keys())])
     weekly_ts_start = ts_val[0]-weekly_ts_val[0]
+    weekday_ts_start = ts_val[0]-weekday_ts_val[0]
     weekly_tplot = numpy.linspace(weekly_ts_val[0],weekly_ts_val[-1], numBins)
+    weekday_tplot = numpy.linspace(weekday_ts_val[0],weekday_ts_val[-1], numBins)
     del weekly_ts_dict
     
-    weekly_entries[station] = {}
-    weekly_exits[station] = {}
-    for ts in weekly_ts_val:
-        weekly_entries[station][ts] = data.entrySpline(weekly_ts_start+ts)
-        weekly_exits[station][ts] = data.exitSpline(weekly_ts_start+ts)
-        for j in range(1,numWeeks):
-            weekly_entries[station][ts] += data.entrySpline(weekly_ts_start+ts+7*j)
-            weekly_entries[station][ts] -= data.entrySpline(weekly_ts_start+7*j)
-            weekly_exits[station][ts] += data.exitSpline(weekly_ts_start+ts+7*j)
-            weekly_exits[station][ts] -= data.exitSpline(weekly_ts_start+7*j)
-
+    weekly_entries[station] = {ts:0 for ts in weekly_ts_val}
+    weekly_exits[station] = {ts:0 for ts in weekly_ts_val}
+    for w in range(0, numWeeks):
+        for ts in weekly_ts_val:
+            weekly_entries[station][ts] += data.entrySpline(weekly_ts_start+ts+7*w)
+            weekly_entries[station][ts] -= data.entrySpline(weekly_ts_start+7*w)
+            weekly_exits[station][ts] += data.exitSpline(weekly_ts_start+ts+7*w)
+            weekly_exits[station][ts] -= data.exitSpline(weekly_ts_start+7*w)
+        
     entryWeekly[station] = spline(weekly_ts_val, [*weekly_entries[station].values()])
     exitWeekly[station] = spline(weekly_ts_val, [*weekly_exits[station].values()])
+
+    weekday_entries[station] = {ts:0 for ts in weekday_ts_val}
+    weekday_exits[station] = {ts:0 for ts in weekday_ts_val}
+    for w in range(0, numWeeks):
+        for d in range(2,7):
+            print(weekday_ts_val)
+            for ts in weekday_ts_val:
+                weekday_entries[station][ts] += data.entrySpline(weekday_ts_start+ts+7*w+d)
+                weekday_entries[station][ts] -= data.entrySpline(weekday_ts_start+7*w+d)
+                weekday_exits[station][ts] += data.exitSpline(weekday_ts_start+ts+7*w+d)
+                weekday_exits[station][ts] -= data.exitSpline(weekday_ts_start+7*w+d)
+    entryWeekday[station] = spline(weekday_ts_val, [*weekday_entries[station].values()])
+    exitWeekday[station] = spline(weekday_ts_val, [*weekday_exits[station].values()])
+    weekday_total_entries = weekday_entries[station][weekday_ts_val[-1]]
+    weekday_total_exits = weekday_exits[station][weekday_ts_val[-1]]
     
     x, y = getdiff(tplot, data.entrySpline)
     timeplotter(x, y, data.title, 'Entries')
-##    #pyplot.plot_date(ts_val, [*data.entries.values()])
+    #pyplot.plot_date(ts_val, [*data.entries.values()])
     pyplot.show()
     
     x, y = getdiff(tplot, data.exitSpline)
@@ -417,20 +442,36 @@ for station in plot_stations:
     pyplot.show()
     
     x, y = getdiff(weekly_tplot, entryWeekly[station])
+##    x = weekday_tplot
+##    y = entryWeekly[station](x)
     weeklyplotter(x, y, data.title, 'Weekly Average Entries')
     pyplot.show()
-    
+  
     x, y = getdiff(weekly_tplot, exitWeekly[station])
+##    y = exitWeekly[station](x)
     weeklyplotter(x, y, data.title, 'Weekly Average Exits')
+    pyplot.show()
+
+    x, y = getdiff(weekday_tplot, entryWeekday[station])
+##    x = weekday_tplot
+##    y = entryWeekday[station](x)
+    weeklyplotter(x, y/weekday_total_entries, data.title, 'Weekday Average Entries')
+    pyplot.show()
+    
+    x, y = getdiff(weekday_tplot, exitWeekday[station])
+##    y = exitWeekday[station](x)
+    weeklyplotter(x, y, data.title, 'Weekday Average Exits')
     pyplot.show()
 
     inverseEntry[station] = spline(data.entrySpline(ts_val)/data.total_entries, ts_val-ts_val[0])
     inverseExit[station] = spline(data.exitSpline(ts_val)/data.total_exits, ts_val-ts_val[0])
     inverseEntryWeekly[station] = spline(entryWeekly[station](weekly_ts_val)/data.total_entries, weekly_ts_val)
-    inverseExitWeekly[station] = spline(exitWeekly[station](weekly_ts_val)/data.total_entries, weekly_ts_val)
+    inverseExitWeekly[station] = spline(exitWeekly[station](weekly_ts_val)/data.total_exits, weekly_ts_val)
+    inverseEntryWeekday[station] = spline(entryWeekday[station](weekday_ts_val)/weekday_total_entries, weekday_ts_val)
+    inverseExitWeekday[station] = spline(exitWeekday[station](weekday_ts_val)/weekday_total_exits, weekday_ts_val)
 
 dplot = numpy.linspace(0,1,numBins)
-for station, stationDensity in inverseExit.items():
+for station, stationDensity in inverseExitWeekday.items():
     fig = pyplot.figure()
     ax = pyplot.gca() 
     pyplot.plot(dplot, stationDensity(dplot))
