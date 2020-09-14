@@ -388,13 +388,13 @@ for station in plot_stations:
     weekly_ts_dict = {}
     weekday_ts_dict = {}
     for val in ts_val:
-        weekly_ts_dict[(val-2)%7] = True
+        weekly_ts_dict[(val-2)%7] = True  # Week normalised to start on Saturday
         if val >= 2:
             weekday_ts_dict[val%1] = True
 
     weekly_ts_dict[0] = True
     weekday_ts_dict[0] = True
-    weekly_ts_dict[7] = True
+    weekly_ts_dict[7] = True # Handling for loopover
     weekday_ts_dict[1] = True
     
     weekly_ts_val = sorted([ts for ts in sorted(weekly_ts_dict.keys())])
@@ -420,7 +420,7 @@ for station in plot_stations:
     weekday_entries[station] = {ts:0 for ts in weekday_ts_val}
     weekday_exits[station] = {ts:0 for ts in weekday_ts_val}
     for w in range(0, numWeeks):
-        for d in range(2,7):
+        for d in range(2,7): # Week normalised to start on Saturday
             print(weekday_ts_val)
             for ts in weekday_ts_val:
                 weekday_entries[station][ts] += data.entrySpline(weekday_ts_start+ts+7*w+d)
