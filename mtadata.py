@@ -113,7 +113,7 @@ def read_file(record, file):
     with open(file, 'r') as csvfile:
         header = [h.strip() for h in csvfile.readline().split(',')]
         reader = csv.DictReader(csvfile, fieldnames=header)
-        ny_tz = timezone('US/Eastern')
+#        ny_tz = timezone('US/Eastern')
         prevSCP = '' # initialized for first iteration
         prevCA = ''
         for row in reader:
@@ -132,7 +132,8 @@ def read_file(record, file):
                 if SCP not in record[CA].turnstiles:
                     record[CA].turnstiles[SCP] = recordSCP()
             datetime_str = str(row['DATE'])+' '+str(row['TIME'])
-            ts = ny_tz.localize(datetime.strptime(datetime_str, "%m/%d/%Y %H:%M:%S"))
+#            ts = ny_tz.localize(datetime.strptime(datetime_str, "%m/%d/%Y %H:%M:%S"))
+            ts = datetime.strptime(datetime_str, "%m/%d/%Y %H:%M:%S")
             record[CA].turnstiles[SCP].insert(ts,int(row['ENTRIES']), int(row['EXITS']))
             prevSCP = SCP
             prevCA = CA
@@ -251,7 +252,6 @@ def findStations(record, junctionDict = {}, junctionNames = {}):
         for ts in sorted(timestamps.keys()):
             rStation.entries[ts] = 0
             rStation.exits[ts] = 0
-    ny_tz = timezone('US/Eastern')
     for station, rStation in stations.items():
 ##        print(rStation.title + ' ' + str(rStation.CAs))
 ##        print('Station: ' + rStation.title)
@@ -314,8 +314,8 @@ for j in junctionArray:
 ##    print()
 
 ########## Main Code
-matplotlib.rcParams['timezone'] = 'US/Eastern'
-start_date = datetime(2019,2,9)
+#matplotlib.rcParams['timezone'] = 'US/Eastern'
+start_date = datetime(2019,1,26)
 rd = REL.relativedelta(days=1, weekday=REL.SA) # get next Saturday
 start_date += rd
 end_date = datetime(2019,2,22)
@@ -326,12 +326,12 @@ while start_date <= end_date:
     datestr_list += [start_date.strftime('%y%m%d')]
     start_date += timedelta(7)
 
-numWeeks = len(datestr_list)
 
 files = []
 for s in datestr_list:
     files += ['turnstile_'+s+'.txt']
 files = ['turnstile_190223 - Copy.txt']
+numWeeks = len(files)
 print(files)
 record = read_files(files)
 generate_CA_splines(record)
@@ -371,78 +371,118 @@ for station in plot_stations:
     tplot = numpy.linspace(ts_val[0],ts_val[-1], numBins*numWeeks)
     
     weekly_ts_dict = {}
-    weekday_ts_dict = {}
     for val in ts_val:
         weekly_ts_dict[(val-2)%7] = True  # Week normalised to start on Saturday
+    weekly_ts_dict[0] = True
+    weekly_ts_dict[7] = True # Handling for loopover
+    weekly_ts_val = sorted([ts for ts in sorted(weekly_ts_dict.keys())])
+    del weekly_ts_dict
+    weekly_tplot = numpy.linspace(weekly_ts_val[0],weekly_ts_val[-1], numBins)
+    
+    weekday_ts_dict = {}
+    for val in ts_val:
         if val >= 2:
             weekday_ts_dict[val%1] = True
-
-    weekly_ts_dict[0] = True
     weekday_ts_dict[0] = True
-    weekly_ts_dict[7] = True # Handling for loopover
-    weekday_ts_dict[1] = True
-
-    weekly_ts_val = sorted([ts for ts in sorted(weekly_ts_dict.keys())])
+    weekday_ts_dict[1] = True # Handling for loopover
     weekday_ts_val = sorted([ts for ts in sorted(weekday_ts_dict.keys())])
-    weekly_ts_start = ts_val[0]-weekly_ts_val[0]
-    weekday_ts_start = ts_val[0]-weekday_ts_val[0]
-    weekly_tplot = numpy.linspace(weekly_ts_val[0],weekly_ts_val[-1], numBins)
+    del weekday_ts_dict
     weekday_tplot = numpy.linspace(weekday_ts_val[0],weekday_ts_val[-1], numBins)
-    del weekly_ts_dict
-    
+
+    ts_start = ts_val[0]-ts_val[0]%1
+
     data.weekly_entries = {ts:0 for ts in weekly_ts_val}
     data.weekly_exits = {ts:0 for ts in weekly_ts_val}
+    data.weekly_entries_confidence = {ts:[] for ts in weekly_ts_val}
+    data.weekly_exits_confidence = {ts:[] for ts in weekly_ts_val}
     for w in range(0, numWeeks):
+        ts_prev = ts_start+7*w
+        entries_0 = data.entrySpline(ts_prev)
+        exits_0 = data.exitSpline(ts_prev)
+        entries_prev = entries_0
+        exits_prev = exits_0
         for ts in weekly_ts_val:
-            data.weekly_entries[ts] += data.entrySpline(weekly_ts_start+ts+7*w)
-            data.weekly_entries[ts] -= data.entrySpline(weekly_ts_start+7*w)
-            data.weekly_exits[ts] += data.exitSpline(weekly_ts_start+ts+7*w)
-            data.weekly_exits[ts] -= data.exitSpline(weekly_ts_start+7*w)
-        
+            ts_current = ts_start+ts+7*w
+            diff_ts = ts_current-ts_prev
+            entries_current = data.entrySpline(ts_current)
+            exits_current = data.exitSpline(ts_current)
+            diff_entries = entries_current-entries_prev
+            diff_exits = exits_current-exits_prev
+            data.weekly_entries[ts] += entries_current - entries_0
+            data.weekly_exits[ts] += exits_current - exits_0
+            if diff_ts != 0:
+                if ts_current <= ts_val[-1] and ts_current > ts_val[0] and ts_current-ts_start >= 1/6:
+                    data.weekly_entries_confidence[ts] += [diff_entries/(diff_ts*24)]
+                    data.weekly_exits_confidence[ts] += [diff_exits/(diff_ts*24)]
+            ts_prev = ts_current
+            entries_prev = entries_current
+            exits_prev = exits_current
+    for ts in weekly_ts_val:
+        data.weekly_entries[ts] /= numWeeks
+        data.weekly_exits[ts] /= numWeeks
+        print(ts, data.weekly_entries_confidence[ts])
     data.entryWeekly = spline(weekly_ts_val, [*data.weekly_entries.values()])
     data.exitWeekly = spline(weekly_ts_val, [*data.weekly_exits.values()])
-
+        
     data.weekday_entries = {ts:0 for ts in weekday_ts_val}
     data.weekday_exits = {ts:0 for ts in weekday_ts_val}
+    data.weekday_entries_confidence = {ts:[] for ts in weekday_ts_val}
+    data.weekday_exits_confidence = {ts:[] for ts in weekday_ts_val}
     for w in range(0, numWeeks):
         for d in range(2,7): # Week normalised to start on Saturday
-            print(weekday_ts_val)
+            ts_prev = ts_start+7*w+d
+            entries_0 = data.entrySpline(ts_prev)
+            exits_0 = data.exitSpline(ts_prev)
+            entries_prev = entries_0
+            exits_prev = exits_0
             for ts in weekday_ts_val:
-                data.weekday_entries[ts] += data.entrySpline(weekday_ts_start+ts+7*w+d)
-                data.weekday_entries[ts] -= data.entrySpline(weekday_ts_start+7*w+d)
-                data.weekday_exits[ts] += data.exitSpline(weekday_ts_start+ts+7*w+d)
-                data.weekday_exits[ts] -= data.exitSpline(weekday_ts_start+7*w+d)
+                ts_current = ts_start+ts+7*w+d
+                entries_current = data.entrySpline(ts_current)
+                exits_current = data.exitSpline(ts_current)
+                diff_ts = ts_current-ts_prev # Note: May be able to use my differentiation function
+                diff_entries = entries_current-entries_prev
+                diff_exits = exits_current-exits_prev
+                data.weekday_entries[ts] += entries_current - entries_0
+                data.weekday_exits[ts] += exits_current - exits_0
+                if diff_ts != 0:
+                    if ts_current <= ts_val[-1] and ts_current > ts_val[0]:
+                        data.weekday_entries_confidence[ts] += [diff_entries/(diff_ts*24)]
+                        data.weekday_exits_confidence[ts] += [diff_exits/(diff_ts*24)]
+                ts_prev = ts_current
+                entries_prev = entries_current
+                exits_prev = exits_current
+    for ts in weekday_ts_val[1:]:
+        data.weekday_entries[ts] /= 5*numWeeks
+        data.weekday_exits[ts] /= 5*numWeeks
     data.entryWeekday = spline(weekday_ts_val, [*data.weekday_entries.values()])
     data.exitWeekday = spline(weekday_ts_val, [*data.weekday_exits.values()])
     weekday_total_entries = data.weekday_entries[weekday_ts_val[-1]]
     weekday_total_exits = data.weekday_exits[weekday_ts_val[-1]]
-    
+
     x, y = getdiff(tplot, data.entrySpline)
     timeplotter(x, y, data.title, 'Entries')
     #pyplot.plot_date(ts_val, [*data.entries.values()])
     pyplot.show()
-    
+
     x, y = getdiff(tplot, data.exitSpline)
     timeplotter(x, y, data.title, 'Exits')
     pyplot.show()
-    
+
     x, y = getdiff(weekly_tplot, data.entryWeekly)
-##    x = weekday_tplot
 ##    y = data.entryWeekly(x)
     weeklyplotter(x, y, data.title, 'Weekly Average Entries')
     pyplot.show()
-  
+
     x, y = getdiff(weekly_tplot, data.exitWeekly)
 ##    y = data.exitWeekly(x)
     weeklyplotter(x, y, data.title, 'Weekly Average Exits')
     pyplot.show()
 
     x, y = getdiff(weekday_tplot, data.entryWeekday)
-##    x = weekday_tplot
 ##    y = data.entryWeekday(x)
-    weeklyplotter(x, y/weekday_total_entries, data.title, 'Weekday Average Entries')
+    weeklyplotter(x, y, data.title, 'Weekday Average Entries')
     pyplot.show()
-    
+
     x, y = getdiff(weekday_tplot, data.exitWeekday)
 ##    y = data.exitWeekday(x)
     weeklyplotter(x, y, data.title, 'Weekday Average Exits')
